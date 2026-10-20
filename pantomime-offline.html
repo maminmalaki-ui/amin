@@ -270,7 +270,7 @@ body.light #countdownNum{color:#18181b}
     <button class="mode-card" data-mode="normal" type="button">
       <span class="m-emoji">🎯</span>
       <h3>حالت عادی</h3>
-      <p>۱۰ نوبت برای دو تیم — انتخاب دسته و سطح — ضرب‌المثل دارد</p>
+      <p>۱۰ نوبت برای دو تیم — انتخاب دسته و سطح — ضرب‌المثل دارد — امتیاز سطح + پاداش زمان ⏱️</p>
     </button>
     <button class="mode-card" data-mode="speed" type="button">
       <span class="m-emoji">⚡</span>
@@ -576,10 +576,21 @@ const WORDS = {
   }
 };
 
-/* امتیازها: پیش‌فرض ۲/۳/۴ — ضرب‌المثل ۵/۷/۱۰ */
+/* امتیاز سطح (حالت عادی + حالت سرعتی): پیش‌فرض ۲/۳/۴ — ضرب‌المثل ۵/۷/۱۰ */
 const POINTS = {};
 WORD_CATS.forEach(function(c){ POINTS[c] = { 'آسان': 2, 'متوسط': 3, 'سخت': 4 }; });
 POINTS['ضرب‌المثل'] = { 'آسان': 5, 'متوسط': 7, 'سخت': 10 };
+
+/* پاداش زمانی حالت عادی — به امتیاز سطح اضافه می‌شود؛ هرچه سریع‌تر حدس بزنند پاداش بیشتر:
+   بالای ۵۰ ثانیه = +۵ · بالای ۴۰ = +۴ · بالای ۳۰ = +۳ · بالای ۲۰ = +۲ · بالای ۱۰ = +۱ · کمتر یا مساوی ۱۰ = ۰ */
+function normalTimePoints(left) {
+  if (left > 50) return 5;
+  if (left > 40) return 4;
+  if (left > 30) return 3;
+  if (left > 20) return 2;
+  if (left > 10) return 1;
+  return 0;
+}
 
 /* حالت سرعتی بدون ضرب‌المثل */
 const SPEED_CATS = WORD_CATS.filter(function(c){ return c !== 'ضرب‌المثل'; });
@@ -873,7 +884,7 @@ document.querySelectorAll('.cat-btn').forEach(function (b) {
     state.cat = b.getAttribute('data-cat');
     document.querySelectorAll('.level-btn').forEach(function (lb) {
       const lv = lb.getAttribute('data-level');
-      lb.querySelector('.lv-pts').textContent = '— ' + fa(POINTS[state.cat][lv]) + ' امتیاز';
+      lb.querySelector('.lv-pts').textContent = '— ' + fa(POINTS[state.cat][lv]) + ' امتیاز + پاداش زمان ⏱️';
     });
     $('levelLabel').style.display = '';
     $('levelGrid').style.display = '';
@@ -1064,16 +1075,18 @@ function speedEnd() {
 function endTurn(result, byTime) {
   if (state.timerId) { clearInterval(state.timerId); state.timerId = null; }
   const ti = currentTeamIndex();
-  let pts = 0;
+  let pts = 0, basePts = 0, bonusPts = 0;
   if (result === 'ok') {
-    pts = POINTS[state.cat][state.level];
+    basePts = POINTS[state.cat][state.level];
+    bonusPts = normalTimePoints(state.secondsLeft);
+    pts = basePts + bonusPts;
     state.scores[ti] += pts;
     beepFound();
     burstConfetti(90);
   } else {
     beepFail();
   }
-  state.history.push({ team: ti, cat: state.cat, level: state.level, word: state.word, result: result, pts: pts, byTime: !!byTime });
+  state.history.push({ team: ti, cat: state.cat, level: state.level, word: state.word, result: result, pts: pts, byTime: !!byTime, left: Math.max(state.secondsLeft, 0), base: basePts, bonus: bonusPts });
   showTurnResult(false);
 }
 
@@ -1093,6 +1106,14 @@ function showTurnResult(isSpeed) {
       '<div class="report-row"><span class="r-label">🎯 دسته / سطح</span><span class="r-val">' + h.cat + ' / ' + h.level + '</span></div>' +
       '<div class="report-row"><span class="r-label">💡 کلمه</span><span class="r-val">' + h.word + '</span></div>' +
       '<div class="report-row"><span class="r-label">🏁 نتیجه</span><span class="r-val">' + (h.result === 'ok' ? '✅ درست حدس زد' : (h.byTime ? '⏰ زمان تمام شد' : '❌ حدس نزدند')) + '</span></div>';
+    if (h.result === 'ok') {
+      html += '<div class="report-row"><span class="r-label">⏱️ زمان باقی‌مانده</span><span class="r-val">' + fa(h.left) + ' ثانیه</span></div>';
+      html += '<div class="report-row"><span class="r-label">🎯 امتیاز سطح</span><span class="r-val">' + fa(h.base) + '</span></div>';
+      html += '<div class="report-row"><span class="r-label">⚡ پاداش زمان</span><span class="r-val">+' + fa(h.bonus) + '</span></div>';
+      if (h.bonus === 0) {
+        html += '<div class="report-row"><span class="r-label">⚠️ کمتر از ۱۰ ثانیه مانده بود</span><span class="r-val">بدون پاداش زمان</span></div>';
+      }
+    }
   }
   html +=
     '<div class="report-row"><span class="r-label">📊 امتیاز ' + state.teams[0] + '</span><span class="r-val">' + fa(state.scores[0]) + '</span></div>' +
